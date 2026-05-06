@@ -149,7 +149,7 @@ export default function SnapCards() {
                 isDarkMode ? "bg-blue-600/10" : "bg-blue-500/10"
               )}
             />
-            <CardContent className="relative flex h-full flex-col justify-between p-2">
+            <CardContent className="relative flex h-full flex-col justify-between p-1">
               <div className="flex justify-between items-start">
                 <div className="">
                   <div className="flex items-center gap-2">
@@ -158,7 +158,7 @@ export default function SnapCards() {
                       Manual Funding
                     </span>
                   </div>
-                  <h3 className="text-xl font-semibold tracking-tight">
+                  <h3 className="text-md font-semibold tracking-tight">
                     Opay Bank / Smart Cash
                   </h3>
                 </div>
