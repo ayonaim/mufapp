@@ -1,0 +1,100 @@
+hey, back to the doublee crediting bug we tried solving earlier, here are all the context you need,
+look thoroughly, with the most careful sherlock holmes style debugging eye,
+without hallucinating in any way, form or manner, why would this function credit the
+user twice instead of just once? make sure to take into account that all
+conditions are perfect, the admin doesnt click the credit button twice,
+the wifi or cellular network are great so there are no network flickers:
+
+here's the generate transaction ref and the credit 
+or debit user function in the admin controller:
+		//Credit Debit User$email,$action,$amount,$reason
+		public function creditDebitUser(){
+			extract($_POST);
+			$ref=$this->generateTransactionRef();
+			$check=$this->model->creditDebitUser($email,$action,$amount,$reason,$ref);
+			if(is_array($check)){
+				if($check["status"] == "success"){
+					return $this->createNotification1("alert-success",$check["msg"]);
+				}
+				else{
+					return $this->createNotification1("alert-danger",$check["msg"]);
+				}
+			}
+			elseif($check == 1){return $this->createNotification1("alert-danger","User Email Not Found");}
+			elseif($check == 2){return $this->createNotification1("alert-danger","Insufficent User Balance");}
+			else{return $this->createNotification1("alert-danger","Unexpected Error, Please Try Again Later");}
+			
+		}
+
+		//Generate Transaction Reference
+		public function generateTransactionRef(){
+			$tranId=rand(1000,9999).time();
+			return $tranId;
+		}
+
+and here are the functions in adminModel.php:
+		//Credit Debit User
+		public function creditDebitUser($email,$action,$amount,$reason,$ref){
+			$dbh=$this->connect();
+			$sql = "SELECT * FROM subscribers WHERE sEmail = :e";
+            $query = $dbh->prepare($sql);
+			$query->bindParam(':e',$email,PDO::PARAM_STR);
+            $query->execute();
+            $results=$query->fetch(PDO::FETCH_OBJ);
+            if($query->rowCount() > 0){
+				
+				$amount = (float) $amount;
+				$oldbalance = (float) $results->sWallet;
+				$userId = $results->sId;
+				$fname = $results->sFname;
+				
+				if($amount > $oldbalance && $action == "Debit"){return 2;}
+				else{
+
+					if($action == "Credit"){$newbalance = $oldbalance + $amount;}
+					elseif($action == "Debit"){$newbalance = $oldbalance - $amount;}
+					else{return 3;}
+
+					$servicename = "Wallet {$action}";
+    				$servicedesc = "Wallet {$action} of N{$amount} for user {$email}. Reason: {$reason}";
+					$message = "Operation Successful. Account {$action}ed with N{$amount}. <br/> Old Balance Is: N".number_format($oldbalance)." <br/> New Balance Is: N".number_format($newbalance).".";
+					$status = 0;
+					$date=date("Y-m-d H:i:s");
+
+					//Record Transaction
+					$sql2 = "INSERT INTO transactions SET sId=:user,transref=:ref,servicename=:sn,servicedesc=:sd,amount=:a,status=:s,oldbal=:ob,newbal=:nb,date=:d";
+					$query2 = $dbh->prepare($sql2);
+					$query2->bindParam(':user',$userId,PDO::PARAM_INT);
+					$query2->bindParam(':ref',$ref,PDO::PARAM_STR);
+					$query2->bindParam(':sn',$servicename,PDO::PARAM_STR);
+					$query2->bindParam(':sd',$servicedesc,PDO::PARAM_STR);
+					$query2->bindParam(':a',$amount,PDO::PARAM_STR);
+					$query2->bindParam(':s',$status,PDO::PARAM_INT);
+					$query2->bindParam(':ob',$oldbalance,PDO::PARAM_STR);
+					$query2->bindParam(':nb',$newbalance,PDO::PARAM_STR);
+					$query2->bindParam(':d',$date,PDO::PARAM_STR);
+					$query2->execute();
+
+					$lastInsertId = $dbh->lastInsertId();
+					if($lastInsertId){
+						$response = array();
+						//Update Account Type & Balance
+						$sql3 = "UPDATE subscribers SET sWallet=:bal WHERE sId=:id";
+						$query3 = $dbh->prepare($sql3);
+						$query3->bindParam(':id',$userId,PDO::PARAM_INT);
+						$query3->bindParam(':bal',$newbalance,PDO::PARAM_STR);
+						if($query3->execute()){$response["status"]="success"; $response["msg"]=$message;}
+						else{$response["status"]="fail"; $response["msg"]="Could Not Update Balance.";}
+
+						//Send Email Notification
+						$subject = $servicename ." (".$this->sitename.")";
+						$message = "Hi ".$fname.", This is to notify you that your account have been {$action}ed with N{$amount}. <br/>";
+						$message .="<h3>Old Balance Is: N".number_format($oldbalance)." <br/> New Balance Is: N".number_format($newbalance).".</h3>";
+						self::sendMail($email,$subject,$message);
+
+						return $response;
+					}
+				}
+			} 
+			else{return 1;}
+		}
